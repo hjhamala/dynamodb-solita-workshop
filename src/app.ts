@@ -1,7 +1,13 @@
 import * as express from 'express';
 import * as bodyParser from 'body-parser';
 import { NextFunction, RequestHandler, Request, Response } from 'express';
-import { addTopic, addUser, getTopicsByUser, searchUser } from './db';
+import {
+  addMessage,
+  addTopic,
+  addUser,
+  getTopicsByUser,
+  searchUser,
+} from './db';
 
 const wrapAsyncHandlerError = (handler: RequestHandler) => (
   req: Request,
@@ -75,5 +81,16 @@ app.post(
     const topicId = await addTopic(userId, topicName);
 
     res.send({ topicId });
+  })
+);
+
+app.post(
+  '/topic/:topicId/message',
+  wrapAsyncHandlerError(async (req: Request, res) => {
+    const topicId = req.params.topicId;
+    const { message, userId } = req.body;
+    const messageId = await addMessage(topicId, userId, message);
+
+    res.send({ messageId });
   })
 );

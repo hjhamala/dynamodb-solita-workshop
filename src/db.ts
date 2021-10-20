@@ -116,3 +116,62 @@ export async function getTopicsByUser(
     topicId: i.sk.split('#')[1],
   }));
 }
+
+export async function addMessage(
+  topicId: string,
+  userId: string,
+  message: string
+): Promise<string> {
+  const messageId = uuid();
+  const messageItem = {
+    pk: topicId,
+    sk: `topic#message#${messageId}`,
+    userId,
+    message,
+  };
+
+  const userMessage = {
+    pk: userId,
+    sk: `message#${messageId}`,
+    topicId,
+    message,
+  };
+
+  const time = new Date().toISOString();
+
+  await dynamo
+    .transactWrite({
+      TransactItems: [
+        {
+          Update: {
+            TableName: tableName,
+            ConditionExpression: 'attribute_exists(pk)',
+            UpdateExpression: 'SET lastUpdate = :lastupdate',
+            ExpressionAttributeValues: { ':lastupdate': time },
+            Key: { pk: topicId, sk: 'topic' },
+          },
+        },
+        {
+          ConditionCheck: {
+            TableName: tableName,
+            ConditionExpression: 'attribute_exists(pk)',
+            Key: { pk: userId, sk: 'user' },
+          },
+        },
+        {
+          Put: {
+            TableName: tableName,
+            Item: messageItem,
+          },
+        },
+        {
+          Put: {
+            TableName: tableName,
+            Item: userMessage,
+          },
+        },
+      ],
+    })
+    .promise();
+  return userId;
+}
