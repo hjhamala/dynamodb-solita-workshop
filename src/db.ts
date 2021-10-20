@@ -19,7 +19,13 @@ export async function addUser(name: string, email: string): Promise<string> {
     .transactWrite({
       TransactItems: [
         { Put: { TableName: tableName, Item: userItem } },
-        { Put: { TableName: tableName, Item: searchItem } },
+        {
+          Put: {
+            TableName: tableName,
+            Item: searchItem,
+            ConditionExpression: 'attribute_not_exists(pk)',
+          },
+        },
       ],
     })
     .promise();
