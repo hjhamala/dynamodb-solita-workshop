@@ -12,7 +12,8 @@ export const dynamo = new DynamoDB.DocumentClient({
 
 export async function addUser(name: string, email: string): Promise<string> {
   const userId = uuid();
-  const userItem = { pk: userId, sk: 'user', name, email };
+  const updateId = uuid();
+  const userItem = { pk: userId, sk: 'user', name, email, updateId };
   const searchItem = { pk: 'email', sk: email, userId };
 
   await dynamo
@@ -32,6 +33,26 @@ export async function addUser(name: string, email: string): Promise<string> {
   return userId;
 }
 
+export async function getUser(
+  userId: string
+): Promise<
+  { name: string; email: string; id: string; updateId: string } | undefined
+> {
+  const userParams = {
+    TableName: tableName,
+    Key: { pk: userId, sk: 'user' },
+  };
+  const user = await dynamo.get(userParams).promise();
+
+  if (typeof user.Item === 'undefined') {
+    return undefined;
+  }
+
+  const { email, name, id, updateId } = user.Item;
+
+  return { email, name, id, updateId };
+}
+
 export async function searchUser(
   emailToken: string
 ): Promise<{ name: string; email: string; id: string } | undefined> {
@@ -46,15 +67,7 @@ export async function searchUser(
     return undefined;
   }
 
-  const userParams = {
-    TableName: tableName,
-    Key: { pk: result.Item.userId, sk: 'user' },
-  };
-  const user = await dynamo.get(userParams).promise();
-
-  const { email, name, id } = user.Item;
-
-  return { email, name, id };
+  return await getUser(result.Item.userId);
 }
 
 export async function addTopic(
@@ -168,6 +181,49 @@ export async function addMessage(
           Put: {
             TableName: tableName,
             Item: userMessage,
+          },
+        },
+      ],
+    })
+    .promise();
+  return userId;
+}
+
+export async function updateName(
+  userId: string,
+  previousUpdateId: string,
+  previousName: string,
+  newName: string
+): Promise<string> {
+  const newUpdateId = uuid();
+
+  await dynamo
+    .transactWrite({
+      TransactItems: [
+        {
+          Update: {
+            TableName: tableName,
+            ConditionExpression:
+              'attribute_exists(pk) AND updateId = :previousId',
+            UpdateExpression: 'SET updateId = :newupdateId, #name = :newName',
+            ExpressionAttributeNames: { '#name': 'name' },
+            ExpressionAttributeValues: {
+              ':previousId': previousUpdateId,
+              ':newupdateId': newUpdateId,
+              ':newName': newName,
+            },
+            Key: { pk: userId, sk: 'user' },
+          },
+        },
+        {
+          Put: {
+            TableName: tableName,
+            Item: {
+              pk: userId,
+              sk: `user#history#${newUpdateId}`,
+              previousName,
+              newName,
+            },
           },
         },
       ],

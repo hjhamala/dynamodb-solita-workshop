@@ -6,7 +6,9 @@ import {
   addTopic,
   addUser,
   getTopicsByUser,
+  getUser,
   searchUser,
+  updateName,
 } from './db';
 
 const wrapAsyncHandlerError = (handler: RequestHandler) => (
@@ -46,6 +48,23 @@ app.post(
     const id = await addUser(name, email);
 
     res.send({ name, email, id });
+  })
+);
+
+app.post(
+  '/user/:userId/name',
+  wrapAsyncHandlerError(async (req: Request, res) => {
+    const userId = req.params.userId;
+    const { name } = req.body;
+    const user = await getUser(req.params.userId);
+
+    if (typeof user === 'undefined') {
+      return res.status(404).send();
+    }
+
+    const id = await updateName(userId, user.updateId, user.name, name);
+
+    res.send({ name, id });
   })
 );
 
