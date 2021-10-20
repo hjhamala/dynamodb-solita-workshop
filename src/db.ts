@@ -16,24 +16,24 @@ export async function addUser(name: string, email: string): Promise<string> {
   const searchItem = { pk: 'email', sk: email, userId };
 
   await dynamo
-    .transactWrite({
-      TransactItems: [
-        { Put: { TableName: tableName, Item: userItem } },
-        {
-          Put: {
-            TableName: tableName,
-            Item: searchItem,
-            ConditionExpression: 'attribute_not_exists(pk)',
+      .transactWrite({
+        TransactItems: [
+          { Put: { TableName: tableName, Item: userItem } },
+          {
+            Put: {
+              TableName: tableName,
+              Item: searchItem,
+              ConditionExpression: 'attribute_not_exists(pk)',
+            },
           },
-        },
-      ],
-    })
-    .promise();
+        ],
+      })
+      .promise();
   return userId;
 }
 
 export async function searchUser(
-  emailToken: string
+    emailToken: string
 ): Promise<{ name: string; email: string; id: string } | undefined> {
   const params = {
     TableName: tableName,
@@ -58,8 +58,8 @@ export async function searchUser(
 }
 
 export async function addTopic(
-  userId: string,
-  topicName: string
+    userId: string,
+    topicName: string
 ): Promise<string> {
   const topicId = uuid();
   const topicItem = {
@@ -74,45 +74,104 @@ export async function addTopic(
   };
 
   await dynamo
-    .transactWrite({
-      TransactItems: [
-        {
-          ConditionCheck: {
-            TableName: tableName,
-            ConditionExpression: 'attribute_exists(pk)',
-            Key: { pk: userId, sk: 'user' },
+      .transactWrite({
+        TransactItems: [
+          {
+            ConditionCheck: {
+              TableName: tableName,
+              ConditionExpression: 'attribute_exists(pk)',
+              Key: { pk: userId, sk: 'user' },
+            },
           },
-        },
-        {
-          Put: {
-            TableName: tableName,
-            Item: topicItem,
+          {
+            Put: {
+              TableName: tableName,
+              Item: topicItem,
+            },
           },
-        },
-        {
-          Put: {
-            TableName: tableName,
-            Item: userTopicSearch,
+          {
+            Put: {
+              TableName: tableName,
+              Item: userTopicSearch,
+            },
           },
-        },
-      ],
-    })
-    .promise();
+        ],
+      })
+      .promise();
   return userId;
 }
 
 export async function getTopicsByUser(
-  userId: string
+    userId: string
 ): Promise<Array<{ topicName: string; topicId: string }>> {
   const topics = await dynamo
-    .query({
-      TableName: tableName,
-      KeyConditionExpression: 'pk = :userId AND begins_with(sk, :topic)',
-      ExpressionAttributeValues: { ':userId': userId, ':topic': 'topic#' },
-    })
-    .promise();
+      .query({
+        TableName: tableName,
+        KeyConditionExpression: 'pk = :userId AND begins_with(sk, :topic)',
+        ExpressionAttributeValues: { ':userId': userId, ':topic': 'topic#' },
+      })
+      .promise();
   return topics.Items.map((i) => ({
     topicName: i.name,
     topicId: i.sk.split('#')[1],
   }));
+}
+
+export async function addMessage(
+    topicId: string,
+    userId: string,
+    message: string
+): Promise<string> {
+  const messageId = uuid();
+  const messageItem = {
+    pk: topicId,
+    sk: `topic#message#${messageId}`,
+    userId,
+    message,
+  };
+
+  const userMessage = {
+    pk: userId,
+    sk: `message#${messageId}`,
+    topicId,
+    message,
+  };
+
+  const time = new Date().toISOString();
+
+  await dynamo
+      .transactWrite({
+        TransactItems: [
+          {
+            Update: {
+              TableName: tableName,
+              ConditionExpression: 'attribute_exists(pk)',
+              UpdateExpression: 'SET lastUpdate = :lastupdate',
+              ExpressionAttributeValues: { ':lastupdate': time },
+              Key: { pk: topicId, sk: 'topic' },
+            },
+          },
+          {
+            ConditionCheck: {
+              TableName: tableName,
+              ConditionExpression: 'attribute_exists(pk)',
+              Key: { pk: userId, sk: 'user' },
+            },
+          },
+          {
+            Put: {
+              TableName: tableName,
+              Item: messageItem,
+            },
+          },
+          {
+            Put: {
+              TableName: tableName,
+              Item: userMessage,
+            },
+          },
+        ],
+      })
+      .promise();
+  return userId;
 }
