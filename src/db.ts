@@ -1,19 +1,20 @@
-import { config, DynamoDB } from 'aws-sdk';
-import { v4 as uuid } from 'uuid';
+import { config, DynamoDB } from 'aws-sdk'
+import { v4 as uuid } from 'uuid'
 
-const tableName = 'Test';
+const tableName = 'Test'
 
-config.update({ region: 'eu-west-1' });
+config.update({ region: 'eu-west-1' })
 
 export const dynamo = new DynamoDB.DocumentClient({
   apiVersion: '2012-08-10',
   endpoint: 'http://localhost:8000',
-});
+})
 
 export async function addUser(name: string, email: string): Promise<string> {
-  const userId = uuid();
-  const userItem = { pk: userId, sk: 'user', name, email };
-  const searchItem = { pk: 'email', sk: email, userId };
+  const userId = uuid()
+  const updateId = uuid()
+  const userItem = { pk: userId, sk: 'user', name, email, updateId }
+  const searchItem = { pk: 'email', sk: email, userId }
 
   await dynamo
     .transactWrite({
@@ -28,8 +29,28 @@ export async function addUser(name: string, email: string): Promise<string> {
         },
       ],
     })
-    .promise();
-  return userId;
+    .promise()
+  return userId
+}
+
+export async function getUser(
+  userId: string
+): Promise<
+  { name: string; email: string; id: string; updateId: string } | undefined
+> {
+  const userParams = {
+    TableName: tableName,
+    Key: { pk: userId, sk: 'user' },
+  }
+  const user = await dynamo.get(userParams).promise()
+
+  if (typeof user.Item === 'undefined') {
+    return undefined
+  }
+
+  const { email, name, id, updateId } = user.Item
+
+  return { email, name, id, updateId }
 }
 
 export async function searchUser(
@@ -38,40 +59,32 @@ export async function searchUser(
   const params = {
     TableName: tableName,
     Key: { pk: 'email', sk: emailToken },
-  };
-
-  const result = await dynamo.get(params).promise();
-
-  if (typeof result.Item === 'undefined') {
-    return undefined;
   }
 
-  const userParams = {
-    TableName: tableName,
-    Key: { pk: result.Item.userId, sk: 'user' },
-  };
-  const user = await dynamo.get(userParams).promise();
+  const result = await dynamo.get(params).promise()
 
-  const { email, name, id } = user.Item;
+  if (typeof result.Item === 'undefined') {
+    return undefined
+  }
 
-  return { email, name, id };
+  return await getUser(result.Item.userId)
 }
 
 export async function addTopic(
   userId: string,
   topicName: string
 ): Promise<string> {
-  const topicId = uuid();
+  const topicId = uuid()
   const topicItem = {
     pk: topicId,
     sk: 'topic',
     name: topicName,
-  };
+  }
   const userTopicSearch = {
     pk: userId,
     sk: `topic#${topicId}`,
     name: topicName,
-  };
+  }
 
   await dynamo
     .transactWrite({
@@ -97,8 +110,8 @@ export async function addTopic(
         },
       ],
     })
-    .promise();
-  return userId;
+    .promise()
+  return userId
 }
 
 export async function getTopicsByUser(
@@ -110,11 +123,11 @@ export async function getTopicsByUser(
       KeyConditionExpression: 'pk = :userId AND begins_with(sk, :topic)',
       ExpressionAttributeValues: { ':userId': userId, ':topic': 'topic#' },
     })
-    .promise();
+    .promise()
   return topics.Items.map((i) => ({
     topicName: i.name,
     topicId: i.sk.split('#')[1],
-  }));
+  }))
 }
 
 export async function addMessage(
@@ -122,22 +135,22 @@ export async function addMessage(
   userId: string,
   message: string
 ): Promise<string> {
-  const messageId = uuid();
+  const messageId = uuid()
   const messageItem = {
     pk: topicId,
     sk: `topic#message#${messageId}`,
     userId,
     message,
-  };
+  }
 
   const userMessage = {
     pk: userId,
     sk: `message#${messageId}`,
     topicId,
     message,
-  };
+  }
 
-  const time = new Date().toISOString();
+  const time = new Date().toISOString()
 
   await dynamo
     .transactWrite({
@@ -172,6 +185,49 @@ export async function addMessage(
         },
       ],
     })
-    .promise();
-  return userId;
+    .promise()
+  return userId
+}
+
+export async function updateName(
+  userId: string,
+  previousUpdateId: string,
+  previousName: string,
+  newName: string
+): Promise<string> {
+  const newUpdateId = uuid()
+
+  await dynamo
+    .transactWrite({
+      TransactItems: [
+        {
+          Update: {
+            TableName: tableName,
+            ConditionExpression:
+              'attribute_exists(pk) AND updateId = :previousId',
+            UpdateExpression: 'SET updateId = :newupdateId, #name = :newName',
+            ExpressionAttributeNames: { '#name': 'name' },
+            ExpressionAttributeValues: {
+              ':previousId': previousUpdateId,
+              ':newupdateId': newUpdateId,
+              ':newName': newName,
+            },
+            Key: { pk: userId, sk: 'user' },
+          },
+        },
+        {
+          Put: {
+            TableName: tableName,
+            Item: {
+              pk: userId,
+              sk: `user#history#${newUpdateId}`,
+              previousName,
+              newName,
+            },
+          },
+        },
+      ],
+    })
+    .promise()
+  return userId
 }
