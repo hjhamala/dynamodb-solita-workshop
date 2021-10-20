@@ -56,3 +56,63 @@ export async function searchUser(
 
   return { email, name, id };
 }
+
+export async function addTopic(
+  userId: string,
+  topicName: string
+): Promise<string> {
+  const topicId = uuid();
+  const topicItem = {
+    pk: topicId,
+    sk: 'topic',
+    name: topicName,
+  };
+  const userTopicSearch = {
+    pk: userId,
+    sk: `topic#${topicId}`,
+    name: topicName,
+  };
+
+  await dynamo
+    .transactWrite({
+      TransactItems: [
+        {
+          ConditionCheck: {
+            TableName: tableName,
+            ConditionExpression: 'attribute_exists(pk)',
+            Key: { pk: userId, sk: 'user' },
+          },
+        },
+        {
+          Put: {
+            TableName: tableName,
+            Item: topicItem,
+          },
+        },
+        {
+          Put: {
+            TableName: tableName,
+            Item: userTopicSearch,
+          },
+        },
+      ],
+    })
+    .promise();
+  return userId;
+}
+
+export async function getTopicsByUser(
+  userId: string
+): Promise<Array<{ topicName: string; topicId: string }>> {
+  const topics = await dynamo
+    .query({
+      TableName: tableName,
+      KeyConditionExpression: 'pk = :userId AND begins_with(sk, :topic)',
+      ExpressionAttributeValues: { ':userId': userId, ':topic': 'topic#' },
+    })
+    .promise();
+  return topics.Items.map((i) => ({
+    topicName: i.name,
+    topicId: i.sk.split('#')[1],
+  }));
+}
